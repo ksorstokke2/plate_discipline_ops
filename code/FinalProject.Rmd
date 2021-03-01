@@ -1,0 +1,147 @@
+---
+title: 'Final Project: Major League Baseball'
+author: "Kyle Sorstokke"
+date: "6/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Plate Discipline and Offensive Success
+
+In this analysis, I am seeking to understand the relationship between plate
+discipline (swinging at fewer pitches outside the strike zone) and offensive
+success, which I define using OPS+, a standardized measurement of on base
+percentage and slugging percentage around the league average of 100. Baseball
+coaches and players have historically argued over how aggressive an approach
+yields the most success, but experts seem to agree that selectivity is the
+most beneficial. With this in mind, my guiding question is: is plate
+discipline, defined by out of zone swing %, indicative of greater offensive
+success in terms of OPS+? I am also seeking to answer whether or not players
+can be grouped by plate discipline to better predict OPS+ since that approach
+is often used in practical baseball application. I will conduct my analysis
+using data from statcast, an automatic data collection tool created by MLB in
+2015. The data is sourced from baseball savant, MLB's official website for
+public statcast data.
+
+
+``` {r, include = FALSE}
+# Reading in the statcast data
+statcast <- read_csv("../data/stats.csv")
+
+# Shuffling data for train/test splitting
+set.seed(123)
+statcast <- statcast[sample(nrow(statcast)),]
+
+# root mean squared error for true y and prediction yhat
+rmse <- function(y,yhat) sqrt(mean((y-yhat)^2))
+```
+
+``` {r}
+# Mutating statcast dataframe to include OPS+ and groupings of plate approach
+statcast <- statcast %>%
+  mutate(opsPlus = (on_base_percent / mean(on_base_percent) +
+                      slg_percent / mean(slg_percent) - 1) * 100) %>%
+  mutate(ozSwingGroup = cut(oz_swing_percent, c(10, 20, 30, 40, 50)))
+
+# Creating train and test data sets (90% and 10%)
+statTrain <- statcast[1:1592,]
+statTest <- statcast[1593:nrow(statcast),]
+```
+
+``` {r, echo = FALSE}
+hist(statcast$oz_swing_percent,
+     main = "Distribution of Out of Zone Swing Percent",
+     xlab = "Out of zone swing %",
+     ylab = "Number of Player-Seasons")
+
+hist(statcast$opsPlus,
+     main = "Distribution of OPS+",
+     xlab = "OPS+",
+     ylab = "Number of Player-Seasons")
+```
+
+The histogram of OPS+ proves that the average player has an OPS+ of 100,
+with the majority of players clustered around the mean in a fairly normal
+distribution. This distribution is the point of OPS+; it takes OPS (on-base
+plus slugging), an unstandardized continuous metric for offensive output, and
+modifies it in relation to the league average.
+
+``` {r, echo = FALSE}
+ggplot(statcast, aes(ozSwingGroup, opsPlus)) +
+  geom_hline(yintercept = 100, color = "red", size = 2) +
+  geom_boxplot(varwidth=T, fill="skyblue3") + 
+  labs(title="Batter Success by Plate Discipline Groups",
+       x="Out of Zone Swing Percent",
+       y="OPS+")
+```
+
+``` {r}
+opsMod <- aov(opsPlus ~ ozSwingGroup, data = statTrain)
+summary(opsMod)
+paste("RMSE:", rmse(statTest$opsPlus, predict(opsMod, statTest)))
+```
+
+I selected a one-way ANOVA test to understand how players can be grouped by
+out of zone swing % to analyze their resulting offensive success. For the
+outcome I selected OPS+ because it is one of the most respected metrics of
+individual offensive production, standardizing On-base plus slugging to a
+league average of 100, with a player at 150 producing 50% more offensive
+value. OPS+ typically only compares players from a single season, but I chose
+to use the entire statcast era (since data collection started in 2015) to
+increase the sample size and get a better understanding of overall trends.
+While out of zone swing % is a continuous variable, I grouped
+it as a factor because MLB analysts often seek to understand different
+approaches to hitting; one major factor in plate approach is discipline
+(swinging at good pitches in the strike zone and not pitches outside the
+strike zone). With this in mind, I created groups from out of zone swing %
+to create groups of players with similar plate discipline. The one-way ANOVA
+test allows me to determine if the groups do in fact have different sample
+means, which would prove that plate discipline does effect on offensive success. 
+
+In a one-way ANOVA test, the F value represents the ratio of variance between
+samples to variance within samples; the higher the value, the greater the
+relative difference in sample means. The common rejection level says that
+an F value < 1 means there is no significant difference between sample groups.
+My test yields an F value of 11.91 with a p-value of essentially 0; plate
+discipline, defined by out of zone swing rate, is indicative of greater
+success at the plate in terms of OPS+.
+
+``` {r, echo = FALSE}
+ggplot(statcast, aes(oz_swing_percent, opsPlus)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(title = "Offensive Success by Out of Zone Swing Rate",
+       x = "Out of zone swing %",
+       y = "OPS+")
+```
+
+``` {r}
+linMod <- lm(opsPlus ~ oz_swing_percent, data = statTrain)
+summary(linMod)
+paste("RMSE:", rmse(statTest$opsPlus, predict(linMod, statTest)))
+```
+
+To further analyze the relationship between out of zone swing % and OPS+,
+I am using a standard linear model. The linear model has t scores of
+essentially 0 for the intercept and coefficient, meaning the association
+is statistically significant. Similar to the ANOVA model, the negative
+coefficient on the covariate shows that the association is negative; an
+increase in out of zone swing % is associated with an expected decrease in
+OPS+ (-0.65 points per oz swing %). This relationship is plausible because
+intuition tells us that players with more disciplined approaches at the plate
+(lower oz swing %) swing at fewer bad pitches, and are subsequently more
+successful hitters. 
+
+Both models yield predictions with fairly low root mean squared errors, but
+the ANOVA model has slightly better predictive power (rmse 22.79 compared to
+22.98). Both models are useful representations of the association between out
+of zone swings and OPS+. The slight difference in rmse tells us that the
+grouping of players by their plate approach yields a slight increase in
+predictive power; this indicates that the common practice of analyzing
+plate approach types (groups) is statistically useful. This analyisis has
+practical application potential because it can help managers predict
+players' offensive success and decide who to play more.
